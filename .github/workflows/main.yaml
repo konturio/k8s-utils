@@ -1,0 +1,50 @@
+---
+
+name: 01 Build and Push
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'job-watcher-controller/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Extracting metadata from a cloned repository
+        id: get-cloned
+        run: |-
+          echo "::set-output name=SHA::$(git log -1 --format='%h')"
+
+      - name: Logging into Nexus Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: nexus.kontur.io:8085
+          username: ${{ secrets.NEXUS_DEPLOYER }}
+          password: ${{ secrets.NEXUS_DEPLOYER_PASS }}
+
+      - name: Extracting Docker metadata
+        uses: docker/metadata-action@v4.0.1
+        id: meta
+        with:
+          images: nexus.kontur.io:8085/konturdev/job-watcher-controller
+          tags: |
+            type=raw,value=${{ github.ref_name }}.{{sha}}.${{ github.run_attempt }}
+
+      - name: Building and pushing Docker image
+        uses: docker/build-push-action@v3.0.0
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Add image tag to step summary
+        env:
+          IMAGE_TAG: ${{ github.ref_name }}.${{ steps.get-cloned.outputs.SHA }}.${{ github.run_attempt }}
+        run: |-
+          echo "<h3>Docker image tag</h3> $IMAGE_TAG" >> $GITHUB_STEP_SUMMARY

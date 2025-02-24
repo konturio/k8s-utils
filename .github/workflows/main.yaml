@@ -17,8 +17,8 @@ jobs:
 
       - name: Extracting metadata from a cloned repository
         id: get-cloned
-        run: |-
-          echo "::set-output name=SHA::$(git log -1 --format='%h')"
+        run: |
+          echo "SHA=$(git log -1 --format='%h')" >> $GITHUB_ENV
 
       - name: Logging into Nexus Container Registry
         uses: docker/login-action@v2
@@ -28,23 +28,22 @@ jobs:
           password: ${{ secrets.NEXUS_DEPLOYER_PASS }}
 
       - name: Extracting Docker metadata
-        uses: docker/metadata-action@v4.0.1
         id: meta
+        uses: docker/metadata-action@v4.0.1
         with:
           images: nexus.kontur.io:8085/konturdev/job-watcher-controller
           tags: |
-            type=raw,value=${{ github.ref_name }}.{{sha}}.${{ github.run_attempt }}
+            type=raw,value=${{ github.ref_name }}.${{ env.SHA }}.${{ github.run_attempt }}
 
       - name: Building and pushing Docker image
         uses: docker/build-push-action@v3.0.0
         with:
-          context: .
+          context: job-watcher-controller/
+          file: job-watcher-controller/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
       - name: Add image tag to step summary
-        env:
-          IMAGE_TAG: ${{ github.ref_name }}.${{ steps.get-cloned.outputs.SHA }}.${{ github.run_attempt }}
-        run: |-
-          echo "<h3>Docker image tag</h3> $IMAGE_TAG" >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "<h3>Docker image tag</h3> ${{ github.ref_name }}.${{ env.SHA }}.${{ github.run_attempt }}" >> $GITHUB_STEP_SUMMARY

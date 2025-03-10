@@ -39,6 +39,14 @@ func (r *JobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// Check if the job has already been processed
+	if job.Annotations != nil {
+		if processed, ok := job.Annotations["job-watcher/processed"]; ok && processed == "true" {
+			log.Info("Job already processed, ignoring", "job", req.NamespacedName)
+			return ctrl.Result{}, nil
+		}
+	}
+
 	if !r.JobNameRegex.MatchString(job.GetName()) {
 		log.Info("Job name does not match pattern, ignoring", "job", req.NamespacedName)
 		return ctrl.Result{}, nil
@@ -72,6 +80,13 @@ func (r *JobReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		time.Now().Format(time.RFC3339)))
 	if err := r.Patch(ctx, &deployment, client.RawPatch(types.MergePatchType, patch)); err != nil {
 		log.Error(err, "Failed to patch target deployment", "deployment", r.TargetDeploymentName, "namespace", r.MonitoredNamespace)
+		return ctrl.Result{}, err
+	}
+
+	// Adding an annotation to the completed job
+	jobPatch := []byte(`{"metadata":{"annotations":{"job-watcher/processed":"true"}}}`)
+	if err := r.Patch(ctx, &job, client.RawPatch(types.MergePatchType, jobPatch)); err != nil {
+		log.Error(err, "Failed to mark job as processed", "job", req.NamespacedName)
 		return ctrl.Result{}, err
 	}
 
